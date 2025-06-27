@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 from datetime import datetime, timedelta
+import isodate  # for parsing ISO 8601 durations
 
 # YouTube API Key
 API_KEY = "AIzaSyAOzaWcZQKZ5uPzcTz58VM-oZZXl8p2B_A"
@@ -63,7 +64,6 @@ keywords = [
     "dog behavior explained"
 ]
 
-
 # Fetch Data Button
 if st.button("Fetch Data"):
     try:
@@ -103,8 +103,12 @@ if st.button("Fetch Data"):
                 st.warning(f"Skipping keyword: {keyword} due to missing video/channel data.")
                 continue
 
-            # Fetch video statistics
-            stats_params = {"part": "statistics", "id": ",".join(video_ids), "key": API_KEY}
+            # Fetch video statistics + contentDetails (duration)
+            stats_params = {
+                "part": "statistics,contentDetails",
+                "id": ",".join(video_ids),
+                "key": API_KEY
+            }
             stats_response = requests.get(YOUTUBE_VIDEO_URL, params=stats_params)
             stats_data = stats_response.json()
 
@@ -113,7 +117,11 @@ if st.button("Fetch Data"):
                 continue
 
             # Fetch channel statistics
-            channel_params = {"part": "statistics", "id": ",".join(channel_ids), "key": API_KEY}
+            channel_params = {
+                "part": "statistics",
+                "id": ",".join(channel_ids),
+                "key": API_KEY
+            }
             channel_response = requests.get(YOUTUBE_CHANNEL_URL, params=channel_params)
             channel_data = channel_response.json()
 
@@ -124,8 +132,15 @@ if st.button("Fetch Data"):
             stats = stats_data["items"]
             channels = channel_data["items"]
 
-            # Collect results
+            # Collect results, excluding videos shorter than 60 seconds (Shorts)
             for video, stat, channel in zip(videos, stats, channels):
+                duration_str = stat["contentDetails"]["duration"]
+                duration_sec = isodate.parse_duration(duration_str).total_seconds()
+
+                if duration_sec < 60:
+                    # Skip Shorts
+                    continue
+
                 title = video["snippet"].get("title", "N/A")
                 description = video["snippet"].get("description", "")[:200]
                 video_url = f"https://www.youtube.com/watch?v={video['id']['videoId']}"
@@ -138,7 +153,8 @@ if st.button("Fetch Data"):
                         "Description": description,
                         "URL": video_url,
                         "Views": views,
-                        "Subscribers": subs
+                        "Subscribers": subs,
+                        "Duration (sec)": int(duration_sec)
                     })
 
         # Display results
@@ -150,12 +166,12 @@ if st.button("Fetch Data"):
                     f"**Description:** {result['Description']}  \n"
                     f"**URL:** [Watch Video]({result['URL']})  \n"
                     f"**Views:** {result['Views']}  \n"
-                    f"**Subscribers:** {result['Subscribers']}"
+                    f"**Subscribers:** {result['Subscribers']}  \n"
+                    f"**Duration (sec):** {result['Duration (sec)']}"
                 )
                 st.write("---")
         else:
-            st.warning("No results found for channels with fewer than 3,000 subscribers.")
+            st.warning("No results found for channels with fewer than 3,000 subscribers and video length over 60 seconds.")
 
     except Exception as e:
         st.error(f"An error occurred: {e}")
-
